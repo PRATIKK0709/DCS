@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 import base64
+import os
+import re
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -97,7 +99,7 @@ def text_to_image(input_text_file, output_image_path):
         print(f"An error occurred during text to image conversion: {e}")
 
 
-@bot.command(name='ctti')
+@bot.command(name='cttia')
 async def convert_text_to_image(ctx):
     # Ask the user for a text file
     await ctx.send("Please provide a text file:")
@@ -132,6 +134,80 @@ async def convert_text_to_image(ctx):
 
     except asyncio.TimeoutError:
         await ctx.send('You took too long to respond. Please try again.')
+
+
+
+
+@bot.command()
+async def ctti(ctx, message_link):
+    # Check if the message link is valid
+    match = re.match(r'https?://discord\.com/channels/(\d+)/(\d+)/(\d+)', message_link)
+    if not match:
+        await ctx.send("Invalid message link.")
+        return
+
+    # Extract information from the message link
+    guild_id, channel_id, message_id = map(int, match.groups())
+
+    # Get the guild, channel, and message
+    guild = bot.get_guild(guild_id)
+    if not guild:
+        await ctx.send("Bot is not in the specified guild.")
+        return
+
+    channel = guild.get_channel(channel_id)
+    if not channel:
+        await ctx.send("Invalid channel.")
+        return
+
+    try:
+        message = await channel.fetch_message(message_id)
+    except discord.NotFound:
+        await ctx.send("Message not found.")
+        return
+
+    # Check if the message has attachments
+    if message.attachments:
+        # Create the "downloads" folder if it doesn't exist
+        os.makedirs('downloads', exist_ok=True)
+
+        for attachment in message.attachments:
+            # Save the attachment locally
+            await attachment.save(f"downloads/{attachment.filename}")
+            print(f"Saved {attachment.filename} from message {message.id} locally.")
+
+            # Check if the attachment is a text file
+            if attachment.filename.endswith('.txt'):
+                # Convert text to image
+                output_image_path = 'output_image.png'
+                text_to_image(f"downloads/{attachment.filename}", output_image_path)
+
+                # Send the image file
+                await ctx.send(file=discord.File(output_image_path))
+                return  # Stop processing after sending the image
+
+        await ctx.send("No text file attachment found in the specified message.")
+    else:
+        await ctx.send("No attachments found in the specified message.")
+
+def text_to_image(input_text_file, output_image_path):
+    try:
+        with open(input_text_file, 'rb') as text_file:
+            # Read base64 data from text file
+            base64_encoded = text_file.read()
+
+            # Decode base64 data
+            image_binary = base64.b64decode(base64_encoded)
+
+            # Create an image from binary data
+            with open(output_image_path, 'wb') as image_file:
+                image_file.write(image_binary)
+            print(f"Text to image conversion successful! Output image saved at: {output_image_path}")
+
+    except FileNotFoundError:
+        print(f"Error: The specified text file '{input_text_file}' does not exist.")
+    except Exception as e:
+        print(f"An error occurred during text to image conversion: {e}")
 
 
 bot.run('your token here :))')
